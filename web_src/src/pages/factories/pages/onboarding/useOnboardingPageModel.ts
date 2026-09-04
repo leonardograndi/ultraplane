@@ -11,6 +11,7 @@ import { showErrorToast } from "@/lib/toast";
 import { parseWorkOrderMetric } from "@/pages/factories/lib/workOrderUsage";
 import type { IntegrationSelections } from "@/pages/home/InstallIntegrationsSection";
 import { useIntegrationConnectDialog } from "@/pages/home/useIntegrationConnectDialog";
+import type { IntegrationInstanceSummary } from "@/pages/home/homeIntegrationStatus";
 import { useInstallFactory } from "@/pages/home/useInstallFactory";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
@@ -161,12 +162,6 @@ function canConfigureWorkspace(canAct: (resource: string, action: string) => boo
   );
 }
 
-function useOnboardingAgentContext(organizationId: string, connected: Set<IntegrationId>) {
-  const spend = useOrganizationWorkspaceUsage(organizationId);
-  const remainingCreditCents = parseWorkOrderMetric(spend.data?.remainingCreditCents);
-  return useOnboardingAgentPlan(organizationId, connected, remainingCreditCents);
-}
-
 function useOnboardingGithubRepos(organizationId: string, githubIntegrationId: string) {
   const githubIntegration = useIntegration(organizationId, githubIntegrationId);
   const resources = useIntegrationResources(organizationId, githubIntegrationId, "repository");
@@ -184,6 +179,43 @@ function useOnboardingGithubRepos(organizationId: string, githubIntegrationId: s
     repositoriesError: resources.error,
   };
 }
+/** Where the connect dialog returns to after the provider round trip. */
+function onboardingReturnTo(organizationId: string, factoryKey: string, openSection: WizardStepId): string {
+  const pick = openSection === "vcs" ? "&pick=newest" : "";
+  return `${factorySetupPath(organizationId, factoryKey)}?step=${openSection}${pick}`;
+}
+
+/** Where setup opens: the requested step, or the first unfinished one. */
+function initialOpenSection(searchParams: URLSearchParams, onboarding: FactoriesFactory["onboarding"]): WizardStepId {
+  const requestedStep = searchParams.get("step");
+  return isWizardStepId(requestedStep) ? requestedStep : initialWizardStep(onboarding);
+}
+type GithubConnectionPickerDeps = {
+  integrationData: IntegrationInstanceSummary[];
+  openSection: WizardStepId;
+  pickNewest: boolean;
+  selections: IntegrationSelections;
+  selectInstance: (integrationName: string, integrationId: string) => void;
+  setup: OnboardingSetupApi;
+  setOpenSection: (step: WizardStepId) => void;
+};
+
+/** Tracks GitHub connection selection and derives the ready integration id. */
+function useOnboardingGithubConnectionPicker(deps: GithubConnectionPickerDeps) {
+  const githubConnections = useOnboardingGithubConnections({
+    integrationData: deps.integrationData,
+    openSection: deps.openSection,
+    selectNewest: deps.pickNewest,
+    selections: deps.selections,
+    selectInstance: deps.selectInstance,
+    onConnectionSelected: () => {
+      deps.setup.selectVcsHost("github");
+      deps.setOpenSection("repo");
+    },
+  });
+  const githubIntegrationId = deps.selections.github?.ready ? deps.selections.github.id : "";
+  return { githubConnections, githubIntegrationId };
+}
 
 export function useOnboardingPageModel(args: {
   organizationId: string;
@@ -195,30 +227,31 @@ export function useOnboardingPageModel(args: {
   const { canAct } = usePermissions();
   const onboarding = args.factory?.onboarding;
   const integrations = useIntegrationSelections(onboarding);
-  const agent = useOnboardingAgentContext(args.organizationId, integrations.connected);
+  const remainingCreditCents = parseWorkOrderMetric(
+    useOrganizationWorkspaceUsage(args.organizationId).data?.remainingCreditCents,
+  );
   const setup = useOnboardingSetupState(args.factory?.name ?? "", {
     connected: integrations.connected,
-    remainingCreditCents: agent.remainingCreditCents,
+    remainingCreditCents,
     simulateDiscovery: false,
   });
+  const agent = useOnboardingAgentPlan(
+    args.organizationId,
+    integrations.connected,
+    remainingCreditCents,
+    setup.agentUsesRunnerLogin,
+  );
   useRestoreSetup(setup, onboarding, integrations.selections);
   const [searchParams] = useSearchParams();
-  const [openSection, setOpenSection] = useState<WizardStepId>(() => {
-    const requestedStep = searchParams.get("step");
-    return isWizardStepId(requestedStep) ? requestedStep : initialWizardStep(onboarding);
-  });
+  const [openSection, setOpenSection] = useState<WizardStepId>(() => initialOpenSection(searchParams, onboarding));
   const connect = useIntegrationConnectDialog({
     organizationId: args.organizationId,
-    // Return to this step after the provider round trip.
-    returnTo: `${factorySetupPath(args.organizationId, args.factoryKey)}?step=${openSection}${
-      openSection === "vcs" ? "&pick=newest" : ""
-    }`,
+    returnTo: onboardingReturnTo(args.organizationId, args.factoryKey, openSection),
     integrationNames: ONBOARDING_INTEGRATIONS,
     selections: integrations.selections,
     onSelectionsChange: integrations.setSelections,
     hiddenConfigurationFields: ONBOARDING_HIDDEN_CONFIGURATION_FIELDS,
   });
-
   const [saving, setSaving] = useState(false);
   const updateFactory = useUpdateFactory(args.organizationId, args.factoryId);
   const updateOnboarding = useFactoryOnboarding(args.organizationId, args.factoryId);
@@ -226,25 +259,20 @@ export function useOnboardingPageModel(args: {
   const createIntake = useCreateFactoryIntake(args.organizationId, args.factoryId);
   const createPRFeedbackHandler = useCreateFactoryPRFeedbackHandler(args.organizationId, args.factoryId);
   const installer = useInstallFactory();
-  const githubIntegrationId = integrations.selections.github?.ready ? integrations.selections.github.id : "";
-  const githubConnections = useOnboardingGithubConnections({
+  const { githubConnections, githubIntegrationId } = useOnboardingGithubConnectionPicker({
     integrationData: connect.integrationData,
     openSection,
-    selectNewest: searchParams.get("pick") === "newest",
+    pickNewest: searchParams.get("pick") === "newest",
     selections: integrations.selections,
     selectInstance: connect.selectInstance,
-    onConnectionSelected: () => {
-      setup.selectVcsHost("github");
-      setOpenSection("repo");
-    },
+    setup,
+    setOpenSection,
   });
   const github = useOnboardingGithubRepos(args.organizationId, githubIntegrationId);
-
   const takenNames = useMemo(
     () => otherWorkspaceNames(args.factories, args.factoryId),
     [args.factories, args.factoryId],
   );
-
   const saves = useSectionSaves({
     setup,
     selections: integrations.selections,
@@ -269,21 +297,12 @@ export function useOnboardingPageModel(args: {
     listPRFeedbackHandlers: () => fetchFactoryPRFeedbackHandlers(args.organizationId, args.factoryId),
     createPRFeedbackHandler: createPRFeedbackHandler.mutateAsync,
     listApps: () => fetchFactoryApps(args.organizationId, args.factoryId),
-    resolveDefaultBranch: (repository: string) =>
+    resolveDefaultBranch: (repository) =>
       resolveGithubDefaultBranch(args.organizationId, githubIntegrationId, repository),
     remainingCreditCents: agent.remainingCreditCents,
     hostedModelsLoading: agent.hostedModelsLoading,
     plan: agent.plan,
   });
-  const finishSetup = useFinishSetupAction({
-    organizationId: args.organizationId,
-    factoryId: args.factoryId,
-    factoryKey: args.factoryKey,
-    factory: args.factory,
-    setup,
-    finish,
-  });
-
   return {
     setup,
     // True when hosted credentials cover the agent, so setup can skip the
@@ -308,7 +327,14 @@ export function useOnboardingPageModel(args: {
     repositoriesError: github.repositoriesError,
     canConfigureWorkspace: canConfigureWorkspace(canAct),
     saving: saving || installer.isInstalling || createIntake.isPending || createPRFeedbackHandler.isPending,
+    finish: useFinishSetupAction({
+      organizationId: args.organizationId,
+      factoryId: args.factoryId,
+      factoryKey: args.factoryKey,
+      factory: args.factory,
+      setup,
+      finish,
+    }),
     ...saves,
-    finish: finishSetup,
   };
 }

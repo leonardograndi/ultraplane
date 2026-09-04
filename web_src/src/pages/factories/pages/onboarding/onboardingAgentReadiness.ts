@@ -14,7 +14,7 @@ export type OnboardingAgentHarness = "AGENT_HARNESS_CLAUDE_CODE" | "AGENT_HARNES
 export type OnboardingAgentPlan = {
   providerId: AgentProviderId;
   component: "runnerClaudeCode" | "runnerCodex" | "runnerOpenRouter";
-  credentialsSource: "integration" | "hosted";
+  credentialsSource: "integration" | "hosted" | "runner";
   integrationName: AgentProviderId;
   harness: OnboardingAgentHarness;
   model: string;
@@ -74,7 +74,12 @@ export function isAgentProviderConnected(connected: Set<IntegrationId>): boolean
   return AGENT_PROVIDER_IDS.some((id) => connected.has(id));
 }
 
-export function isAgentStepReady(connected: Set<IntegrationId>, remainingCreditCents: number): boolean {
+export function isAgentStepReady(
+  connected: Set<IntegrationId>,
+  remainingCreditCents: number,
+  runnerLogin = false,
+): boolean {
+  if (runnerLogin) return true;
   return remainingCreditCents > 0 || isAgentProviderConnected(connected);
 }
 
@@ -82,7 +87,12 @@ export function resolveOnboardingAgent(args: {
   connected: Set<IntegrationId>;
   remainingCreditCents: number;
   hostedModels: HostedModelsByProvider;
+  /** User chose the Claude Code login on the runner, without an API key. */
+  runnerLogin?: boolean;
 }): OnboardingAgentPlan | undefined {
+  if (args.runnerLogin) {
+    return planForRunnerLogin();
+  }
   for (const providerId of AGENT_PROVIDER_IDS) {
     if (!args.connected.has(providerId)) continue;
     return planForConnectedProvider(providerId, args.hostedModels);
@@ -167,5 +177,22 @@ function planForConnectedProvider(
     harness: spec.harness,
     model,
     planningModel: planningModelFor(spec, modelIds, model),
+  };
+}
+
+/**
+ * Runner login uses the Claude Code login persisted on the runner, so no
+ * integration, hosted credit, or model allowlist applies.
+ */
+function planForRunnerLogin(): OnboardingAgentPlan {
+  const spec = AGENT_PROVIDER_SPECS.claude;
+  return {
+    providerId: "claude",
+    component: spec.component,
+    credentialsSource: "runner",
+    integrationName: "claude",
+    harness: spec.harness,
+    model: spec.defaultModel,
+    planningModel: planningModelFor(spec, [], spec.defaultModel),
   };
 }

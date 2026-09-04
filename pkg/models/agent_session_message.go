@@ -1,12 +1,12 @@
 package models
 
 import (
-	"time"
-
+	"errors"
 	"github.com/google/uuid"
 	"github.com/superplanehq/superplane/pkg/database"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
+	"time"
 )
 
 const (
@@ -131,6 +131,52 @@ func ListAgentSessionMessagesPage(sessionID uuid.UUID, before *AgentSessionMessa
 		rows[i], rows[j] = rows[j], rows[i]
 	}
 	return rows, nil
+}
+
+// FindLatestAgentSessionMessageID returns the newest message id for the
+// session (cursor bootstrap), or uuid.Nil when the session has no messages.
+// IDs are UUIDv4, so ordering follows (created_at, id), never id alone.
+func FindLatestAgentSessionMessageID(tx *gorm.DB, sessionID uuid.UUID) (uuid.UUID, error) {
+	var row AgentSessionMessage
+	err := tx.
+		Where("session_id = ?", sessionID).
+		Order("created_at DESC, id DESC").
+		First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return uuid.Nil, nil
+	}
+	if err != nil {
+		return uuid.Nil, err
+	}
+	return row.ID, nil
+}
+
+// FindNextAgentUserMessageAfter returns the first user message strictly after
+// the cursor message in (created_at, id) order, or nil when none is pending.
+// A nil/unknown cursor scans from the oldest message.
+func FindNextAgentUserMessageAfter(tx *gorm.DB, sessionID, afterID uuid.UUID) (*AgentSessionMessage, error) {
+	query := tx.Where("session_id = ? AND role = ?", sessionID, AgentMessageRoleUser)
+	if afterID != uuid.Nil {
+		after, err := FindAgentSessionMessage(tx, afterID)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			after = nil
+		} else if err != nil {
+			return nil, err
+		}
+		if after != nil && after.CreatedAt != nil {
+			query = query.Where("(created_at, id) > (?, ?)", after.CreatedAt, after.ID)
+		}
+	}
+
+	var message AgentSessionMessage
+	err := query.Order("created_at ASC, id ASC").First(&message).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &message, nil
 }
 
 func CountAgentSessionMessagesInTransaction(tx *gorm.DB, sessionID uuid.UUID) (int64, error) {

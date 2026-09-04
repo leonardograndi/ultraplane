@@ -20,6 +20,8 @@ export type OnboardingSetupState = {
   issuesDiscovered: boolean;
   issuesChoice: IssuesChoiceId | null;
   agent: AgentHarnessId | null;
+  /** True when the user chose the Claude Code login on the runner, without an API key. */
+  agentUsesRunnerLogin: boolean;
   finished: boolean;
 };
 
@@ -43,12 +45,13 @@ function setupReadiness(input: {
   connected: Set<IntegrationId>;
   issuesChoice: IssuesChoiceId | null;
   remainingCreditCents: number;
+  agentUsesRunnerLogin: boolean;
 }) {
   const nameReady = input.workspaceName.trim().length > 0;
   const vcsReady = input.vcsHost !== null && input.connected.has(input.vcsHost);
   const repoReady = vcsReady && input.selectedRepo !== null;
   const issuesReady = isIssuesReady(input.issuesChoice, input.connected);
-  const agentReady = isAgentStepReady(input.connected, input.remainingCreditCents);
+  const agentReady = isAgentStepReady(input.connected, input.remainingCreditCents, input.agentUsesRunnerLogin);
   return {
     nameReady,
     vcsReady,
@@ -86,6 +89,7 @@ export function useOnboardingSetupState(
   /** True after Continue to coding agent — starts backlog analysis. */
   const [issuesCommitted, setIssuesCommitted] = useState(false);
   const [agent, setAgent] = useState<AgentHarnessId | null>(null);
+  const [agentUsesRunnerLogin, setAgentUsesRunnerLogin] = useState(false);
   const [finished, setFinished] = useState(false);
   const discoveryTimerRef = useRef<number | null>(null);
   const connected = options?.connected ?? localConnected;
@@ -205,6 +209,7 @@ export function useOnboardingSetupState(
     connected,
     issuesChoice,
     remainingCreditCents: options?.remainingCreditCents ?? 0,
+    agentUsesRunnerLogin,
   });
 
   const summary = useMemo(
@@ -243,6 +248,8 @@ export function useOnboardingSetupState(
     commitIssuesStep,
     agent,
     setAgent,
+    agentUsesRunnerLogin,
+    setAgentUsesRunnerLogin,
     finished,
     setFinished,
     issueCount,

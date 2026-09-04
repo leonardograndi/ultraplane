@@ -31,7 +31,12 @@ function renderAgentStep(args?: {
       remainingCreditCents: 0,
       simulateDiscovery: false,
     });
-    return <AgentStep organizationId={FACTORIES_ORGANIZATION_ID} setup={setup} onRequestConnect={onRequestConnect} />;
+    return (
+      <div>
+        <AgentStep organizationId={FACTORIES_ORGANIZATION_ID} setup={setup} onRequestConnect={onRequestConnect} />
+        <span data-testid="agent-ready">{String(setup.agentReady)}</span>
+      </div>
+    );
   }
 
   return {
@@ -90,5 +95,17 @@ describe("AgentStep", () => {
     await user.click(screen.getByRole("button", { name: "Connect OpenAI" }));
 
     expect(onRequestConnect).toHaveBeenCalledWith("openai");
+  });
+
+  it("marks the agent step ready when the user picks the runner login", async () => {
+    const user = userEvent.setup();
+    renderAgentStep({
+      connected: [],
+      spend: { remainingCreditCents: "0", grantTotalCents: "0" },
+    });
+
+    expect(screen.getByTestId("agent-ready")).toHaveTextContent("false");
+    await user.click(screen.getByRole("button", { name: /Runner login/ }));
+    expect(screen.getByTestId("agent-ready")).toHaveTextContent("true");
   });
 });

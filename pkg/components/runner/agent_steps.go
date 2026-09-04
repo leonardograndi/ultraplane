@@ -15,6 +15,7 @@ const (
 	CredentialsSourceSecret      = "secret"
 	CredentialsSourceIntegration = "integration"
 	CredentialsSourceHosted      = "hosted"
+	CredentialsSourceRunner      = "runner"
 )
 
 var nonSlugChars = regexp.MustCompile(`[^a-z0-9]+`)

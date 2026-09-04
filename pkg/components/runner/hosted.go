@@ -32,6 +32,10 @@ func ValidateAgentCredentials(credentials AgentCredentials, integrationRequired 
 		return nil
 	case CredentialsSourceHosted:
 		return nil
+	case CredentialsSourceRunner:
+		// The CLI uses the Claude Code login persisted on the runner; no
+		// secret or integration is required.
+		return nil
 	default:
 		return fmt.Errorf("invalid credentials source: %s", credentials.Source)
 	}

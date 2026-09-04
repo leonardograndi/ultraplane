@@ -34,6 +34,15 @@ func TestInjectHostedCredentialsStripsExistingBaseURL(t *testing.T) {
 	}, got)
 }
 
+func TestValidateAgentCredentialsAcceptsRunnerLogin(t *testing.T) {
+	t.Parallel()
+
+	// Runner login needs neither a secret nor an integration, and it is valid
+	// whether or not the component supports integrations.
+	require.NoError(t, ValidateAgentCredentials(AgentCredentials{Source: CredentialsSourceRunner}, true))
+	require.NoError(t, ValidateAgentCredentials(AgentCredentials{Source: CredentialsSourceRunner}, false))
+}
+
 func TestValidateHostedAgentSpecRequiresModel(t *testing.T) {
 	t.Parallel()
 

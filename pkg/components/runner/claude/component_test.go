@@ -462,6 +462,49 @@ func TestRunClaudeCodeExecuteSoftBlocksWhenHostedCreditIsEmpty(t *testing.T) {
 	assert.ErrorIs(t, err, models.ErrHostedCreditEmpty)
 }
 
+// Runner login keeps the task free of API key env vars: the CLI on the
+// runner authenticates with the Claude Code login persisted on the runner.
+func TestRunClaudeCodeExecuteWithRunnerLoginInjectsNoAPIKey(t *testing.T) {
+	t.Setenv("TASK_BROKER_BASE_URL", "https://broker.example")
+	t.Setenv("TASK_BROKER_AUTH_TOKEN", "token-1")
+	t.Setenv("TASK_BROKER_FLEET_ID", "")
+
+	httpContext := &contexts.HTTPContext{
+		Responses: []*http.Response{
+			{StatusCode: http.StatusCreated, Body: io.NopCloser(strings.NewReader(`{"id":"task-claude-runner-1"}`))},
+		},
+	}
+
+	component := &RunClaudeCode{}
+	err := component.Execute(core.ExecutionContext{
+		Configuration: map[string]any{
+			"machineType": testRunnerMachineType,
+			"model":       "sonnet",
+			"steps": []map[string]any{
+				{"name": "Fix tests", "type": "prompt", "prompt": "Fix the failing tests"},
+			},
+			"credentials":      map[string]any{"source": "runner"},
+			"workingDirectory": "/tmp",
+		},
+		HTTP:           httpContext,
+		Webhook:        &contexts.NodeWebhookContext{},
+		ExecutionState: &contexts.ExecutionStateContext{KVs: map[string]string{}},
+		Requests:       &contexts.RequestContext{},
+	})
+	require.NoError(t, err)
+	require.Len(t, httpContext.Requests, 1)
+
+	body, err := io.ReadAll(httpContext.Requests[0].Body)
+	require.NoError(t, err)
+
+	var req createTaskRequest
+	require.NoError(t, json.Unmarshal(body, &req))
+
+	assert.NotContains(t, string(body), envAnthropicAPIKey)
+	assert.NotContains(t, string(body), envAnthropicBaseURL)
+	assert.Equal(t, "Fix the failing tests", requireTaskFile(t, req.Files, "prompts/01-fix-tests.txt").Content)
+}
+
 func TestRunClaudeCodeProcessTaskStatusIncludesResult(t *testing.T) {
 	t.Parallel()
 
