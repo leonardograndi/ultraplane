@@ -6,6 +6,8 @@ package agents
 import (
 	"context"
 	"errors"
+
+	"github.com/google/uuid"
 )
 
 type ProviderEventType string
@@ -137,6 +139,12 @@ type CreateSessionOptions struct {
 	Title          string
 	VaultIDs       []string
 	Resources      []FileResource
+	// OrganizationID, UserID, and CanvasID identify the chat session for
+	// providers that mint scoped runner credentials (claude-code). The
+	// anthropic provider ignores them.
+	OrganizationID uuid.UUID
+	UserID         uuid.UUID
+	CanvasID       uuid.UUID
 }
 
 type DefineOutcomeOptions struct {

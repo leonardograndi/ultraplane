@@ -176,7 +176,12 @@ func (s *Service) provisionSession(ctx context.Context, organizationID, userID, 
 		}
 
 		title := sessionTitle(organizationID, canvasID)
-		upstream, err := s.provider.CreateSession(ctx, CreateSessionOptions{Title: title})
+		upstream, err := s.provider.CreateSession(ctx, CreateSessionOptions{
+			Title:          title,
+			OrganizationID: organizationID,
+			UserID:         userID,
+			CanvasID:       canvasID,
+		})
 		if err != nil {
 			return fmt.Errorf("create provider session: %w", err)
 		}
@@ -531,7 +536,10 @@ func (s *Service) replaceProviderSession(ctx context.Context, stale *models.Agen
 	}
 
 	upstream, err := s.provider.CreateSession(ctx, CreateSessionOptions{
-		Title: sessionTitle(target.organizationID, target.canvasID),
+		Title:          sessionTitle(target.organizationID, target.canvasID),
+		OrganizationID: target.organizationID,
+		UserID:         stale.UserID,
+		CanvasID:       target.canvasID,
 	})
 	if err != nil {
 		return nil, "", false, fmt.Errorf("%w: create provider session: %w", errProviderSessionRefreshFailed, err)

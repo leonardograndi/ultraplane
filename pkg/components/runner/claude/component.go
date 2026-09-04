@@ -99,6 +99,7 @@ func (c *RunClaudeCode) Configuration() []configuration.Field {
 			IntegrationLabel:  "Integration",
 			AllowHosted:       true,
 			HostedDescription: "Anthropic API key, Claude integration, or SuperPlane-hosted credentials.",
+			AllowRunnerLogin:  true,
 		}),
 		runner.AgentModelField("anthropic", "Claude model id. SuperPlane-hosted credentials use the installation allowlist.", "sonnet"),
 		runner.AgentStepsField(
@@ -200,6 +201,10 @@ func (c *RunClaudeCode) injectCredentials(ctx core.ExecutionContext, environment
 			return nil, err
 		}
 		return runner.InjectHostedCredentials(environment, envAnthropicAPIKey, access.APIKey, envAnthropicBaseURL, access.BaseURL), nil
+	case runner.CredentialsSourceRunner:
+		// The CLI authenticates with the Claude Code login persisted on the
+		// runner; no API key is injected.
+		return environment, nil
 	default:
 		return nil, fmt.Errorf("invalid credentials source: %s", credentials.Source)
 	}

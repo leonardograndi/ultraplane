@@ -50,6 +50,13 @@ export function AgentStep({
             onConnect={() => onRequestConnect(option.id)}
           />
         ))}
+        <ConnectOptionRow
+          icon={<IntegrationChoiceIcon name="claude" />}
+          title="Runner login"
+          detail="Use the Claude Code login on the runner. No API key."
+          selected={setup.agentUsesRunnerLogin}
+          onSelect={() => setup.setAgentUsesRunnerLogin(!setup.agentUsesRunnerLogin)}
+        />
       </div>
     </div>
   );

@@ -33,6 +33,10 @@ describe("isAgentStepReady", () => {
     expect(isAgentStepReady(connected("openrouter"), 0)).toBe(true);
   });
 
+  it("is ready when the user picks the Claude Code runner login", () => {
+    expect(isAgentStepReady(connected(), 0, true)).toBe(true);
+  });
+
   it("is not ready when credit is empty and no provider is connected", () => {
     expect(isAgentStepReady(connected(), 0)).toBe(false);
     expect(isAgentStepReady(connected("github"), 0)).toBe(false);
@@ -56,6 +60,36 @@ describe("resolveOnboardingAgent", () => {
       model: "anthropic/claude-sonnet-4-6",
       planningModel: "anthropic/claude-sonnet-4-6",
     });
+  });
+
+  it("uses the Claude Code runner login without an integration or hosted credit", () => {
+    expect(
+      resolveOnboardingAgent({
+        connected: connected(),
+        remainingCreditCents: 0,
+        hostedModels: noHostedModels,
+        runnerLogin: true,
+      }),
+    ).toEqual({
+      providerId: "claude",
+      component: "runnerClaudeCode",
+      credentialsSource: "runner",
+      integrationName: "claude",
+      harness: "AGENT_HARNESS_CLAUDE_CODE",
+      model: "sonnet",
+      planningModel: "opus",
+    });
+  });
+
+  it("prefers the runner login over a connected provider", () => {
+    expect(
+      resolveOnboardingAgent({
+        connected: connected("claude"),
+        remainingCreditCents: 5000,
+        hostedModels: noHostedModels,
+        runnerLogin: true,
+      }),
+    ).toMatchObject({ credentialsSource: "runner" });
   });
 
   it("gives planning an Opus id when the allowlist has one", () => {

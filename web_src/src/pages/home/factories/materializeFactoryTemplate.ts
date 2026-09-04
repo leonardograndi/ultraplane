@@ -123,7 +123,7 @@ export type FactoryAgentRewrite = {
    * caller resolves this against the same list as `model`.
    */
   planningModel?: string;
-  credentials: { source: "hosted" } | { source: "integration"; name: string };
+  credentials: { source: "hosted" } | { source: "integration"; name: string } | { source: "runner" };
 };
 
 function rewriteOnboardingAgentNodes(doc: YamlCanvas, rewrite: FactoryAgentRewrite): void {
@@ -134,6 +134,8 @@ function rewriteOnboardingAgentNodes(doc: YamlCanvas, rewrite: FactoryAgentRewri
     if (!configuration || typeof configuration !== "object") continue;
     if (rewrite.credentials.source === "hosted") {
       configuration.credentials = { source: "hosted" };
+    } else if (rewrite.credentials.source === "runner") {
+      configuration.credentials = { source: "runner" };
     } else {
       configuration.credentials = {
         source: "integration",

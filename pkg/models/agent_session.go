@@ -291,6 +291,9 @@ func MarkAgentSessionTokenUsageTracked(sessionID uuid.UUID, usage AgentSessionTo
 				"tracked_usage_cache_write_tokens": maxInt64(session.TrackedUsageCacheWriteTokens, usage.CacheWriteTokens),
 				"tracked_usage_total_tokens":       maxInt64(session.TrackedUsageTotalTokens, usage.TotalTokens),
 				"tracked_usage_initialized":        true,
+				// updated_at is the optimistic-concurrency key for the
+				// per-turn idle transition; usage tracking must not bump it.
+				"updated_at": gorm.Expr("updated_at"),
 			}).Error
 	})
 }

@@ -101,6 +101,10 @@ services:
       TASK_BROKER_FLEET_ID: ${TASK_BROKER_FLEET_ID:-}
       # Bearer; must match broker AUTH_TOKEN (runner compose default: dev-local-token).
       TASK_BROKER_AUTH_TOKEN: ${TASK_BROKER_AUTH_TOKEN:-dev-local-token}
+      # Set to 0 on runners whose Claude Code login is an interactive/keychain
+      # login: --bare never reads OAuth or the keychain, so the CLI answers
+      # "Not logged in" without it. Empty keeps --bare (file login).
+      SUPERPLANE_CLAUDE_BARE: ${SUPERPLANE_CLAUDE_BARE:-}
       ALLOWED_WS_ORIGINS: ${ALLOWED_WS_ORIGINS:-http://localhost:8000}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_AGENT_ID: ${ANTHROPIC_AGENT_ID:-}

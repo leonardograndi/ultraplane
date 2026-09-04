@@ -10,6 +10,7 @@ import (
 	"os"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/superplanehq/superplane/pkg/agents"
 	agenttools "github.com/superplanehq/superplane/pkg/agents/agent_tools"
 	"github.com/superplanehq/superplane/pkg/agents/anthropic"
+	"github.com/superplanehq/superplane/pkg/agents/claudecode"
 	"github.com/superplanehq/superplane/pkg/authorization"
 	"github.com/superplanehq/superplane/pkg/components/runner"
 	"github.com/superplanehq/superplane/pkg/config"
@@ -75,7 +77,7 @@ func buildAgentService(authService authorization.Authorization) (agents.Provider
 	cfg := config.LoadAnthropicAgentConfig()
 	if !cfg.Enabled() {
 		log.Info("Anthropic managed agents disabled: missing ANTHROPIC_* env vars")
-		return nil, nil
+		return buildClaudeCodeAgentService(authService)
 	}
 
 	if err := anthropic.SyncDefaultAgentPrompt(context.Background(), anthropic.Config{
@@ -114,6 +116,38 @@ func buildAgentService(authService authorization.Authorization) (agents.Provider
 	return provider, service
 }
 
+// buildClaudeCodeAgentService enables canvas chat through the Claude Code CLI
+// on a fleet runner — the CLI logs in with the Claude Code account persisted
+// on the runner, so no Anthropic API key is needed. Requires a task broker.
+func buildClaudeCodeAgentService(authService authorization.Authorization) (agents.Provider, agentsActions.AgentsService) {
+	if strings.TrimSpace(os.Getenv("TASK_BROKER_BASE_URL")) == "" {
+		log.Info("Managed agents disabled: missing ANTHROPIC_* env vars and TASK_BROKER_BASE_URL")
+		return nil, nil
+	}
+
+	provider, err := claudecode.New(claudecode.Config{
+		Model:              os.Getenv("CLAUDE_CODE_AGENT_MODEL"),
+		TaskTimeoutSeconds: intFromEnv("CLAUDE_CODE_AGENT_SESSION_TIMEOUT_SECONDS", 14400),
+	})
+	if err != nil {
+		log.WithError(err).Warn("failed to initialise Claude Code agent chat provider")
+		return nil, nil
+	}
+
+	service := agents.NewService(provider, authService)
+	log.Info("Claude Code agent chat enabled via task broker (runner login, no API key)")
+	return provider, service
+}
+
+func intFromEnv(name string, fallback int) int {
+	if raw := strings.TrimSpace(os.Getenv(name)); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			return parsed
+		}
+	}
+	return fallback
+}
+
 func startWorkers(
 	encryptor crypto.Encryptor,
 	registry *registry.Registry,
@@ -122,6 +156,7 @@ func startWorkers(
 	baseURL string,
 	authService authorization.Authorization,
 	agentProvider agents.Provider,
+	agentToolRegistry *agenttools.Registry,
 ) {
 	log.Println("Starting Workers")
 
@@ -303,14 +338,6 @@ func startWorkers(
 
 	if agentProvider != nil && os.Getenv("START_AGENT_STREAM_WORKER") != "no" {
 		log.Println("Starting Agent Stream Worker")
-		agentToolRegistry := agenttools.NewRegistry(agenttools.Dependencies{
-			Encryptor:         encryptor,
-			ComponentRegistry: registry,
-			GitProvider:       gitProvider,
-			WebhookBaseURL:    getWebhookBaseURL(baseURL),
-			AuthService:       authService,
-			UsageService:      getOptionalWorkerUsageService(),
-		})
 		w := workers.NewAgentStreamWorkerWithUsageService(
 			agentProvider,
 			rabbitMQURL,
@@ -400,6 +427,7 @@ func startPublicAPI(
 	authService authorization.Authorization,
 	gitProvider gitprovider.Provider,
 	grpcServices *grpc.Services,
+	agentToolRegistry *agenttools.Registry,
 ) {
 	log.Println("Starting Public API with integrated Web Server")
 
@@ -430,6 +458,7 @@ func startPublicAPI(
 	if err != nil {
 		log.Panicf("Error creating public API server: %v", err)
 	}
+	server.AgentToolRegistry = agentToolRegistry
 
 	// Start the EventDistributer worker if enabled
 	if os.Getenv("START_EVENT_DISTRIBUTER") == "yes" {
@@ -667,6 +696,25 @@ func Start() {
 
 	agentProvider, agentService := buildAgentService(authService)
 
+	// The same registry serves the agent stream worker and the public runner
+	// agent-session endpoints, so tools run in-process on the server for both.
+	var agentToolRegistry *agenttools.Registry
+	if agentProvider != nil {
+		agentToolUsageService, usageErr := usage.NewServiceFromEnv()
+		if usageErr != nil {
+			log.Printf("usage service unavailable for agent canvas tool: %v", usageErr)
+			agentToolUsageService = nil
+		}
+		agentToolRegistry = agenttools.NewRegistry(agenttools.Dependencies{
+			Encryptor:         encryptorInstance,
+			ComponentRegistry: registry,
+			GitProvider:       gitProvider,
+			WebhookBaseURL:    webhooksBaseURL,
+			AuthService:       authService,
+			UsageService:      agentToolUsageService,
+		})
+	}
+
 	runnerUsageService, err := usage.NewServiceFromEnv()
 	if err != nil {
 		log.Fatalf("failed to initialize usage service for runner limits: %v", err)
@@ -702,6 +750,7 @@ func Start() {
 			authService,
 			gitProvider,
 			grpcServices,
+			agentToolRegistry,
 		)
 	}
 
@@ -713,6 +762,7 @@ func Start() {
 		baseURL,
 		authService,
 		agentProvider,
+		agentToolRegistry,
 	)
 
 	log.Println("SuperPlane is UP.")

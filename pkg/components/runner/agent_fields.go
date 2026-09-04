@@ -13,6 +13,7 @@ type AgentCredentialsOptions struct {
 	IntegrationLabel  string
 	AllowHosted       bool
 	HostedDescription string
+	AllowRunnerLogin  bool
 }
 
 func AgentMachineTypeField() configuration.Field {
@@ -42,6 +43,9 @@ func AgentCredentialsField(opts AgentCredentialsOptions) configuration.Field {
 	}
 	if opts.AllowHosted {
 		options = append(options, configuration.FieldOption{Label: "SuperPlane hosted", Value: CredentialsSourceHosted})
+	}
+	if opts.AllowRunnerLogin {
+		options = append(options, configuration.FieldOption{Label: "Runner login", Value: CredentialsSourceRunner})
 	}
 
 	schema := []configuration.Field{
@@ -91,6 +95,9 @@ func AgentCredentialsField(opts AgentCredentialsOptions) configuration.Field {
 		if opts.HostedDescription != "" {
 			description = opts.HostedDescription
 		}
+	}
+	if opts.AllowRunnerLogin {
+		description += " Or use the Claude Code login on the runner (no API key)."
 	}
 
 	return configuration.Field{

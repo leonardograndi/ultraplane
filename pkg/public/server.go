@@ -20,6 +20,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	log "github.com/sirupsen/logrus"
+	"github.com/superplanehq/superplane/pkg/agents/agent_tools"
 	"github.com/superplanehq/superplane/pkg/authentication"
 	"github.com/superplanehq/superplane/pkg/authorization"
 	"github.com/superplanehq/superplane/pkg/config"
@@ -95,6 +96,9 @@ type Server struct {
 	authHandler           *authentication.Handler
 	isDev                 bool
 	usageService          usage.Service
+	// AgentToolRegistry serves the runner agent-session endpoints when the
+	// claude-code chat provider is enabled; nil keeps those endpoints inert.
+	AgentToolRegistry *agenttools.Registry
 }
 
 // WebsocketHub returns the websocket hub for this server
@@ -381,6 +385,9 @@ func (s *Server) RegisterGRPCGateway(services *grpc.Services) error {
 	s.Router.HandleFunc("/api/v1/runner/planning-sessions/wait", s.handleRunnerPlanningWait).Methods("GET")
 	s.Router.HandleFunc("/api/v1/runner/planning-sessions/drafts", s.handleRunnerPlanningDraft).Methods("POST")
 	s.Router.HandleFunc("/api/v1/runner/planning-sessions/surveys", s.handleRunnerPlanningSurvey).Methods("POST")
+	s.Router.HandleFunc("/api/v1/runner/agent-sessions/wait", s.handleRunnerAgentSessionWait).Methods("GET")
+	s.Router.HandleFunc("/api/v1/runner/agent-sessions/tools", s.handleRunnerAgentSessionTools).Methods("GET")
+	s.Router.HandleFunc("/api/v1/runner/agent-sessions/tools/call", s.handleRunnerAgentSessionToolCall).Methods("POST")
 
 	s.Router.Handle(
 		"/api/v1/canvases/{canvas_id}/node-executions/{execution_id}/runner-live-logs/session",
